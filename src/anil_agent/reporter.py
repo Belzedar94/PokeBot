@@ -71,8 +71,8 @@ class Reporter:
         schema = summary_json_schema()
         prompt = (
             "Devuelve SOLO JSON válido con el schema {summary:string}.\n"
-            "Genera 1 línea corta y graciosa en español.\n"
-            "No insultes; humor ligero.\n\n"
+            "Genera 1 línea corta y graciosa en español que no sea cheesy ni cutre.\n"
+            "humor negro o al menos basto y gracioso.\n\n"
             f"Tipo: {kind}\n"
             f"Datos: {json.dumps(record, ensure_ascii=False)}\n"
         )
