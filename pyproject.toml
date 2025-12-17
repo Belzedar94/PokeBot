@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anil-agent"
+version = "0.1.0"
+description = "Discord-controlled AI agent to play Pokémon Añil Randomlocke."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "discord.py>=2.3,<3",
+  "google-genai",
+  "mss>=9.0",
+  "Pillow>=10.0",
+  "pywin32>=306",
+  "pydirectinput>=1.0",
+  "pydantic>=2.4,<3",
+  "PyYAML>=6.0",
+  "python-dotenv>=1.0",
+  "requests>=2.31",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

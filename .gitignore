@@ -1,0 +1,12 @@
+.env
+config.yaml
+
+.venv/
+__pycache__/
+*.pyc
+
+logs/*
+reports/*
+!logs/.gitkeep
+!reports/.gitkeep
+

@@ -1,0 +1,11 @@
+Patch instructions (Pokémon Añil game folder)
+===========================================
+
+1) In the game folder (same folder as `Game.exe`), open `preload.rb`.
+2) Append this line at the end of the file:
+
+    require_relative "agent_bridge"
+
+3) Copy `agent_bridge.rb` (from `anil-agent/game_mod/agent_bridge.rb`) into the same game folder.
+4) Restart the game.
+
