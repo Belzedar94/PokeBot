@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class GeminiConfig:
     model: str
-    thinking_level: str = "low"
+    thinking_level: str = "high"
     api_key_env: str = "GEMINI_API_KEY"
     timeout_s: float = 30.0
 
@@ -59,6 +59,7 @@ class GeminiClient:
     def __init__(self, cfg: GeminiConfig):
         self._cfg = cfg
         self._schema = action_json_schema()
+
         self._api_key = os.environ.get(cfg.api_key_env)
         if not self._api_key:
             raise RuntimeError(f"Missing Gemini API key in env var {cfg.api_key_env}")
@@ -73,7 +74,10 @@ class GeminiClient:
             self._sdk_types = types
             logger.info("GeminiClient: using google-genai SDK")
         except Exception as exc:
-            logger.warning("GeminiClient: google-genai SDK unavailable (%s), using REST fallback", exc)
+            logger.warning(
+                "GeminiClient: google-genai SDK unavailable (%s), using REST fallback",
+                exc,
+            )
 
     def set_thinking_level(self, level: str) -> None:
         self._cfg = GeminiConfig(
@@ -92,7 +96,9 @@ class GeminiClient:
         rules_text_spanish: Optional[str],
     ) -> Action:
         prompt = _build_prompt_text(
-            rules_text_spanish=rules_text_spanish, state=state, recent_actions=recent_actions
+            rules_text_spanish=rules_text_spanish,
+            state=state,
+            recent_actions=recent_actions,
         )
 
         if self._sdk_client and self._sdk_types:
@@ -121,19 +127,16 @@ class GeminiClient:
                 "response_mime_type": "application/json",
                 "response_json_schema": self._schema,
                 "thinking_config": {"thinking_level": self._cfg.thinking_level},
-                "temperature": 0.2,
             },
             {
                 "response_mime_type": "application/json",
                 "response_schema": self._schema,
                 "thinking_config": {"thinking_level": self._cfg.thinking_level},
-                "temperature": 0.2,
             },
             {
                 "responseMimeType": "application/json",
                 "responseSchema": self._schema,
                 "thinkingConfig": {"thinkingLevel": self._cfg.thinking_level},
-                "temperature": 0.2,
             },
         ]
 
@@ -142,18 +145,21 @@ class GeminiClient:
         for cfg in cfg_variants:
             try:
                 resp = client.models.generate_content(
-                    model=self._cfg.model, contents=contents, config=cfg
+                    model=self._cfg.model,
+                    contents=contents,
+                    config=cfg,
                 )
                 break
             except Exception as exc:  # pragma: no cover
                 last_exc = exc
+
         if resp is None:
             raise RuntimeError(f"SDK generate_content failed: {last_exc}") from last_exc
+
         text = getattr(resp, "text", None)
         if isinstance(text, str) and text.strip():
             return text
 
-        # Fallback: try to extract from candidates/parts.
         try:
             candidates = getattr(resp, "candidates", []) or []
             content = candidates[0].content
@@ -184,10 +190,9 @@ class GeminiClient:
             ],
             "generationConfig": {
                 "responseMimeType": "application/json",
-                "responseSchema": self._schema,
-                "temperature": 0.2,
+                "responseJsonSchema": self._schema,
+                "thinkingConfig": {"thinkingLevel": self._cfg.thinking_level},
             },
-            "thinkingConfig": {"thinkingLevel": self._cfg.thinking_level},
         }
 
         r = requests.post(
@@ -196,7 +201,8 @@ class GeminiClient:
             json=body,
             timeout=self._cfg.timeout_s,
         )
-        r.raise_for_status()
+        if not r.ok:
+            raise RuntimeError(f"Gemini REST error {r.status_code}: {r.text}")
         data = r.json()
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"]

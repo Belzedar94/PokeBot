@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from .decision_loop import AgentController
+from .report_store import ReportStore
 
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,9 @@ class OutboundMessage:
     content: str
     file_path: Optional[Path] = None
     filename: Optional[str] = None
+    report_day: Optional[str] = None
+    report_kind: Optional[str] = None
+    report_screenshot_rel: Optional[str] = None
 
 
 class AnilDiscordBot(commands.Bot):
@@ -32,6 +36,9 @@ class AnilDiscordBot(commands.Bot):
         guild_id: Optional[int],
         agent: AgentController,
         scratch_dir: Path,
+        report_store: ReportStore,
+        admin_user_ids: list[int],
+        commands_in_control_channel_only: bool,
         control_channel_id: int,
         captures_channel_id: int,
         deaths_channel_id: int,
@@ -44,6 +51,10 @@ class AnilDiscordBot(commands.Bot):
         self._guild_id = guild_id
         self.agent = agent
         self.scratch_dir = scratch_dir
+        self.report_store = report_store
+
+        self.admin_user_ids = {int(x) for x in admin_user_ids if int(x) > 0}
+        self.commands_in_control_channel_only = bool(commands_in_control_channel_only)
 
         self.control_channel_id = control_channel_id
         self.captures_channel_id = captures_channel_id
@@ -86,6 +97,20 @@ class AnilDiscordBot(commands.Bot):
                 await self._send_outbound(msg)
             except Exception as exc:
                 logger.warning("failed to send outbound message: %s", exc)
+                await asyncio.sleep(cooldown_s)
+                continue
+
+            if msg.report_day and msg.report_kind and msg.report_screenshot_rel:
+                try:
+                    await asyncio.to_thread(
+                        self.report_store.mark_reported,
+                        msg.report_day,
+                        msg.report_kind,
+                        msg.report_screenshot_rel,
+                    )
+                except Exception as exc:
+                    logger.warning("failed to mark report item as sent: %s", exc)
+
             await asyncio.sleep(cooldown_s)
 
     async def _send_outbound(self, msg: OutboundMessage) -> None:
@@ -120,41 +145,74 @@ class AnilDiscordBot(commands.Bot):
 
     # ---- Slash commands ----
 
+    def _auth_error(self, interaction: discord.Interaction) -> Optional[str]:
+        if (
+            self.commands_in_control_channel_only
+            and self.control_channel_id > 0
+            and interaction.channel_id != self.control_channel_id
+        ):
+            return f"Use commands in <#{self.control_channel_id}>."
+
+        if self.admin_user_ids and int(interaction.user.id) not in self.admin_user_ids:
+            return "You are not allowed to control this bot."
+
+        return None
+
     def _cmd_start(self) -> app_commands.Command:
         @app_commands.command(name="start", description="Start the agent loop.")
         async def start_cmd(interaction: discord.Interaction) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             self.agent.start()
-            await interaction.response.send_message("Agent started.")
+            await interaction.response.send_message("Agent started.", ephemeral=True)
 
         return start_cmd
 
     def _cmd_pause(self) -> app_commands.Command:
         @app_commands.command(name="pause", description="Pause the agent.")
         async def pause_cmd(interaction: discord.Interaction) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             self.agent.pause()
-            await interaction.response.send_message("Paused.")
+            await interaction.response.send_message("Paused.", ephemeral=True)
 
         return pause_cmd
 
     def _cmd_resume(self) -> app_commands.Command:
         @app_commands.command(name="resume", description="Resume the agent.")
         async def resume_cmd(interaction: discord.Interaction) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             self.agent.resume()
-            await interaction.response.send_message("Resumed.")
+            await interaction.response.send_message("Resumed.", ephemeral=True)
 
         return resume_cmd
 
     def _cmd_stop(self) -> app_commands.Command:
         @app_commands.command(name="stop", description="Stop the agent.")
         async def stop_cmd(interaction: discord.Interaction) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             self.agent.stop()
-            await interaction.response.send_message("Stopped.")
+            await interaction.response.send_message("Stopped.", ephemeral=True)
 
         return stop_cmd
 
     def _cmd_status(self) -> app_commands.Command:
         @app_commands.command(name="status", description="Show agent status.")
         async def status_cmd(interaction: discord.Interaction) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             st = self.agent.get_status()
             s = st.last_state or {}
             scene = s.get("scene")
@@ -168,13 +226,17 @@ class AnilDiscordBot(commands.Bot):
                 f"last_action={st.last_action}\n"
                 f"last_error={st.last_error}"
             )
-            await interaction.response.send_message(msg)
+            await interaction.response.send_message(msg, ephemeral=True)
 
         return status_cmd
 
     def _cmd_screenshot(self) -> app_commands.Command:
         @app_commands.command(name="screenshot", description="Capture a game screenshot.")
         async def screenshot_cmd(interaction: discord.Interaction) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             await interaction.response.defer(thinking=True, ephemeral=True)
             out = self.scratch_dir / "discord_screenshot.png"
             try:
@@ -207,11 +269,15 @@ class AnilDiscordBot(commands.Bot):
         @app_commands.command(name="thinking", description="Set Gemini thinking level (low|high).")
         @app_commands.describe(level="Thinking level")
         async def thinking_cmd(interaction: discord.Interaction, level: str) -> None:
+            err = self._auth_error(interaction)
+            if err:
+                await interaction.response.send_message(err, ephemeral=True)
+                return
             level = level.lower().strip()
             if level not in ("low", "high"):
                 await interaction.response.send_message("Level must be 'low' or 'high'.", ephemeral=True)
                 return
             self.agent.set_thinking_level(level)
-            await interaction.response.send_message(f"Thinking level set to {level}.")
+            await interaction.response.send_message(f"Thinking level set to {level}.", ephemeral=True)
 
         return thinking_cmd

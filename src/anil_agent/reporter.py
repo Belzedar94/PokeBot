@@ -27,8 +27,8 @@ def summary_json_schema() -> dict:
 @dataclass(frozen=True)
 class ReporterConfig:
     mode: str = "template"  # "template" or "gemini"
-    model: str = "gemini-3-pro-preview"
-    thinking_level: str = "low"
+    model: str = "gemini-3-flash-preview"
+    thinking_level: str = "high"
     api_key_env: str = "GEMINI_API_KEY"
     timeout_s: float = 20.0
 
@@ -90,19 +90,16 @@ class Reporter:
                 "response_mime_type": "application/json",
                 "response_json_schema": schema,
                 "thinking_config": {"thinking_level": self._cfg.thinking_level},
-                "temperature": 0.6,
             },
             {
                 "response_mime_type": "application/json",
                 "response_schema": schema,
                 "thinking_config": {"thinking_level": self._cfg.thinking_level},
-                "temperature": 0.6,
             },
             {
                 "responseMimeType": "application/json",
                 "responseSchema": schema,
                 "thinkingConfig": {"thinkingLevel": self._cfg.thinking_level},
-                "temperature": 0.6,
             },
         ]
 
@@ -134,10 +131,9 @@ class Reporter:
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
                 "responseMimeType": "application/json",
-                "responseSchema": schema,
-                "temperature": 0.6,
+                "responseJsonSchema": schema,
+                "thinkingConfig": {"thinkingLevel": self._cfg.thinking_level},
             },
-            "thinkingConfig": {"thinkingLevel": self._cfg.thinking_level},
         }
         r = requests.post(
             endpoint,
@@ -145,7 +141,9 @@ class Reporter:
             json=body,
             timeout=self._cfg.timeout_s,
         )
-        r.raise_for_status()
+        if not r.ok:
+            raise RuntimeError(f"Gemini REST error {r.status_code}: {r.text}")
+
         data = r.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
         out = _SUMMARY_ADAPTER.validate_json(text)

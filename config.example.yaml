@@ -6,8 +6,8 @@ game:
   screenshot_max_width: 768
 
 agent:
-  model: "gemini-3-pro-preview"
-  thinking_level: "low"
+  model: "gemini-3-flash-preview"
+  thinking_level: "high"
   step_delay_ms: 250
   max_actions_per_minute: 240
   # "template" (free) or "gemini" (calls API)
@@ -19,6 +19,12 @@ discord:
   token_env: "DISCORD_BOT_TOKEN"
   # Optional: speeds up slash-command syncing if set.
   guild_id: null
+  # Restrict who can control the agent (recommended)
+  # - If you add IDs here, only these users can run commands.
+  # - Copy your user ID by enabling Discord Developer Mode, then right-click your username → Copy ID.
+  admin_user_ids: []
+  # If true, commands must be run in `control_channel_id` (recommended for busy servers).
+  commands_in_control_channel_only: true
   control_channel_id: 0
   captures_channel_id: 0
   deaths_channel_id: 0

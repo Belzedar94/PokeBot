@@ -69,8 +69,31 @@ logger = logging.getLogger(__name__)
 
 
 def action_json_schema() -> Dict[str, Any]:
-    # Gemini structured output expects standard JSON Schema.
-    return _ACTION_ADAPTER.json_schema()
+    # Keep the Gemini-side JSON Schema simple (avoid oneOf/discriminator),
+    # then validate strictly with Pydantic after parsing.
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["type"],
+        "properties": {
+            "type": {"type": "string", "enum": ["buttons", "wait"]},
+            "buttons": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["key", "ms"],
+                    "properties": {
+                        "key": {"type": "string", "enum": list(ALLOWED_KEYS)},
+                        "ms": {"type": "integer", "minimum": 0, "maximum": 1500},
+                    },
+                },
+            },
+            "wait_ms": {"type": "integer", "minimum": 0, "maximum": 60000},
+            "note": {"type": "string", "maxLength": 240},
+        },
+    }
 
 
 def parse_action_json(text: str) -> Action:

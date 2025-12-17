@@ -99,6 +99,7 @@ class AgentController:
         self._status_lock = threading.Lock()
         self._recent_actions: Deque[Dict[str, Any]] = deque(maxlen=10)
         self._action_times: Deque[float] = deque(maxlen=1200)
+        self._step_counter = 0
 
         self._step_logger = StepLogger(run_paths)
 
@@ -169,7 +170,7 @@ class AgentController:
             time.sleep(0.25)
 
     def _run_loop(self) -> None:
-        step = 0
+        step = self._step_counter
         try:
             while not self._stop.is_set():
                 if self._paused.is_set():
@@ -250,6 +251,7 @@ class AgentController:
 
                 self._recent_actions.append(self._status.last_action or {})
                 step += 1
+                self._step_counter = step
                 time.sleep(self._step_delay_s)
         except Exception as exc:
             logger.exception("agent loop crashed: %s", exc)

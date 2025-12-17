@@ -15,8 +15,8 @@ class GameConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    model: str = "gemini-3-pro-preview"
-    thinking_level: Literal["low", "high"] = "low"
+    model: str = "gemini-3-flash-preview"
+    thinking_level: Literal["low", "high"] = "high"
     step_delay_ms: int = Field(default=250, ge=0, le=60_000)
     max_actions_per_minute: int = Field(default=240, ge=1, le=10_000)
     summary_mode: Literal["template", "gemini"] = "template"
@@ -26,6 +26,8 @@ class AgentConfig(BaseModel):
 class DiscordConfig(BaseModel):
     token_env: str = "DISCORD_BOT_TOKEN"
     guild_id: Optional[int] = None
+    admin_user_ids: list[int] = Field(default_factory=list)
+    commands_in_control_channel_only: bool = True
     control_channel_id: int = Field(ge=0)
     captures_channel_id: int = Field(ge=0)
     deaths_channel_id: int = Field(ge=0)

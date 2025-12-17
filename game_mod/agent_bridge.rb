@@ -359,14 +359,23 @@ module AgentBridge
       nil
     end
 
+    def player_obj
+      return $Trainer if defined?($Trainer) && $Trainer
+      return $player if defined?($player) && $player
+      nil
+    rescue StandardError
+      nil
+    end
+
     def safe_badges_count
-      if defined?($Trainer) && $Trainer
-        if $Trainer.respond_to?(:badges)
-          b = $Trainer.badges
+      p = player_obj
+      if p
+        if p.respond_to?(:badges)
+          b = p.badges
           return b.count { |x| x } if b.is_a?(Array)
         end
-        return $Trainer.badge_count if $Trainer.respond_to?(:badge_count)
-        return $Trainer.num_badges if $Trainer.respond_to?(:num_badges)
+        return p.badge_count if p.respond_to?(:badge_count)
+        return p.num_badges if p.respond_to?(:num_badges)
       end
       if defined?(pbGetBadgeCount)
         return pbGetBadgeCount
@@ -377,8 +386,8 @@ module AgentBridge
     end
 
     def safe_money
-      return nil unless defined?($Trainer) && $Trainer
-      return $Trainer.money if $Trainer.respond_to?(:money)
+      p = player_obj
+      return p.money if p && p.respond_to?(:money)
       nil
     rescue StandardError
       nil
@@ -394,8 +403,9 @@ module AgentBridge
     end
 
     def safe_party_array
-      return [] unless defined?($Trainer) && $Trainer && $Trainer.respond_to?(:party)
-      party = $Trainer.party
+      p = player_obj
+      return [] unless p && p.respond_to?(:party)
+      party = p.party
       return [] unless party.is_a?(Array)
 
       party.map do |p|

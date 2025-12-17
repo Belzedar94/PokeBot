@@ -4,7 +4,7 @@ This project lets an AI agent play **Pokémon Añil: Definitive Edition** on you
 
 It works by:
 
-- Reading game state/events from a small “bridge” file inside the game folder
+- Reading game state/events from a small bridge file inside the game folder (`agent_bridge.rb`)
 - Taking screenshots of the game window
 - Asking Gemini what buttons to press (as strict JSON)
 - Pressing those keys for you
@@ -78,10 +78,11 @@ The config needs the channel IDs so the bot knows where to post reports.
 4. Now you can copy IDs:
    - Right-click a channel → “Copy ID”
    - (Optional) Right-click the server name → “Copy ID” (this is the “Guild ID”)
+   - (Recommended) Right-click your username → “Copy ID” (this is your “User ID” for `admin_user_ids`)
 
 What each ID is used for:
 
-- `control_channel_id`: where `/screenshot` gets posted (if set to `0`, screenshot replies privately to you)
+- `control_channel_id`: where `/screenshot` gets posted (and where commands must be run if enabled)
 - `captures_channel_id`: where it posts captures (at badge time)
 - `deaths_channel_id`: where it posts deaths (at badge time)
 - `announce_channel_id`: where it posts “badge earned → paused”
@@ -140,7 +141,8 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 1. In the `anil-agent/` folder, copy `config.example.yaml`
 2. Rename the copy to `config.yaml`
 3. Open `config.yaml` with Notepad
-4. Fill these:
+
+Important settings:
 
 - `game.window_title_contains`
   - Start the game (`ROM/Game.exe`) and look at the title at the top of the window.
@@ -148,6 +150,13 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 - `discord.control_channel_id`, `discord.captures_channel_id`, `discord.deaths_channel_id`, `discord.announce_channel_id`
   - Paste the numbers you got from “Copy ID”
+
+- `discord.admin_user_ids` (recommended)
+  - Put your own Discord user ID here (and any other trusted admins)
+  - This prevents random people from running `/start` or `/stop`
+
+- `discord.commands_in_control_channel_only` (recommended)
+  - If `true`, commands must be used inside `control_channel_id`
 
 - `discord.guild_id` (optional, recommended)
   - Paste your server ID (right-click server name → “Copy ID”)
@@ -167,9 +176,9 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 python -m anil_agent.main --config config.yaml
 ```
 
-3. In Discord, try:
+3. In Discord, go to your control channel and try:
    - `/status` (shows agent status)
-   - `/screenshot` (posts a screenshot to the control channel, if configured)
+   - `/screenshot` (posts a screenshot)
    - `/start` (starts playing)
    - `/pause` and `/resume`
    - `/stop`
@@ -206,16 +215,27 @@ If the stream shows a black screen:
 
 ## Optional smoke tests (quick checks)
 
+### Bridge test (`--bridge-test`)
+
+This checks that the in-game bridge is installed and reachable (it does **not** press any buttons, take screenshots, call Gemini, or use Discord).
+
+Expected output:
+
+- You should see a line like `bridge test OK` and the program exits.
+- It also prints a `run_id=...` line and saves a log file under `logs/<run_id>/run.log`.
+
 ```powershell
-# Bridge: 100x ping/state/events (game must be running + patched)
+# Bridge: runs 100x ping/state/events (game must be running + bridge installed)
 python -m anil_agent.main --config config.yaml --bridge-test
 
 # Window capture: saves one PNG into logs/<run_id>/
 python -m anil_agent.main --config config.yaml --screenshot-test
+
+# Gemini preflight (verifies structured output works with your API key)
+python -m anil_agent.main --config config.yaml --gemini-test
 ```
 
 ## Outputs
 
 - Runtime logs: `logs/<run_id>/...`
 - Daily reports: `reports/YYYY-MM-DD/report.json` and screenshots under `captures/` and `deaths/`
-

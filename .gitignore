@@ -1,4 +1,5 @@
 .env
+.env.local
 config.yaml
 
 .venv/

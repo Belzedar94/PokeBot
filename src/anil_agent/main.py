@@ -5,6 +5,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List
+import io
 
 from dotenv import load_dotenv
 
@@ -87,9 +88,11 @@ def build_event_handler(
                                 content=summary or f"{kind}: {rel}",
                                 file_path=path,
                                 filename=Path(rel).name,
+                                report_day=day,
+                                report_kind=kind,
+                                report_screenshot_rel=rel,
                             )
                         )
-                        store.mark_reported(day, kind, rel)
 
                 if int(cfg.discord.announce_channel_id) > 0:
                     send(
@@ -111,6 +114,11 @@ def main() -> int:
     ap.add_argument("--config", type=Path, default=Path("config.yaml"))
     ap.add_argument("--bridge-test", action="store_true", help="Run 100x ping/state/events then exit.")
     ap.add_argument("--screenshot-test", action="store_true", help="Capture one window screenshot then exit.")
+    ap.add_argument(
+        "--gemini-test",
+        action="store_true",
+        help="Call Gemini once with the action schema then exit (requires GEMINI_API_KEY).",
+    )
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -124,6 +132,14 @@ def main() -> int:
         )
     )
     input_ctrl = InputController(InputControllerConfig(window_title_contains=cfg.game.window_title_contains))
+
+    if not cfg.discord.admin_user_ids and (
+        not cfg.discord.commands_in_control_channel_only or cfg.discord.control_channel_id <= 0
+    ):
+        logger.warning(
+            "Discord commands are not restricted. Set `discord.admin_user_ids` and/or "
+            "`discord.control_channel_id` + `discord.commands_in_control_channel_only`."
+        )
 
     if args.screenshot_test:
         out = run_paths.run_dir / "screenshot_test.png"
@@ -142,6 +158,24 @@ def main() -> int:
         logger.info("bridge test OK")
         return 0
 
+    if args.gemini_test:
+        from PIL import Image
+
+        img = Image.new("RGB", (320, 240), color=(0, 0, 0))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        gemini = GeminiClient(
+            GeminiConfig(model=cfg.agent.model, thinking_level=cfg.agent.thinking_level)
+        )
+        action = gemini.decide_action(
+            screenshot_png=buf.getvalue(),
+            state={"t": 0, "scene": "preflight"},
+            recent_actions=[],
+            rules_text_spanish=cfg.agent.rules_text_spanish,
+        )
+        logger.info("gemini-test action=%s", action)
+        return 0
+
     token = os.environ.get(cfg.discord.token_env, "")
     if not token:
         raise RuntimeError(f"Missing Discord token in env var {cfg.discord.token_env}")
@@ -150,7 +184,9 @@ def main() -> int:
 
     store = ReportStore(cfg.paths.reports_dir)
     reporter = Reporter(
-        ReporterConfig(mode=cfg.agent.summary_mode, model=cfg.agent.model, thinking_level="low")
+        ReporterConfig(
+            mode=cfg.agent.summary_mode, model=cfg.agent.model, thinking_level=cfg.agent.thinking_level
+        )
     )
 
     agent = AgentController(
@@ -170,6 +206,9 @@ def main() -> int:
         guild_id=cfg.discord.guild_id,
         agent=agent,
         scratch_dir=run_paths.run_dir,
+        report_store=store,
+        admin_user_ids=cfg.discord.admin_user_ids,
+        commands_in_control_channel_only=cfg.discord.commands_in_control_channel_only,
         control_channel_id=cfg.discord.control_channel_id,
         captures_channel_id=cfg.discord.captures_channel_id,
         deaths_channel_id=cfg.discord.deaths_channel_id,
