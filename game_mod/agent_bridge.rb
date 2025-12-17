@@ -1,7 +1,323 @@
 # frozen_string_literal: true
 
 require "socket"
-require "json"
+
+begin
+  require "json"
+rescue LoadError
+  module MiniJSON
+    class ParseError < StandardError; end
+
+    module_function
+
+    def parse(str)
+      Parser.new(str).parse
+    end
+
+    def dump(obj)
+      Generator.generate(obj)
+    end
+
+    def _byte(str, idx)
+      if str.respond_to?(:getbyte)
+        str.getbyte(idx)
+      else
+        str[idx]
+      end
+    end
+
+    def _chr(byte)
+      return byte.chr(Encoding::ASCII_8BIT) if defined?(Encoding) && byte.respond_to?(:chr)
+      byte.chr
+    end
+
+    class Parser
+      WS = [9, 10, 13, 32].freeze
+
+      def initialize(str)
+        @s = str.to_s.dup
+        @s.force_encoding(Encoding::ASCII_8BIT) if defined?(Encoding) && @s.respond_to?(:force_encoding)
+        @i = 0
+      end
+
+      def parse
+        skip_ws
+        v = parse_value
+        skip_ws
+        raise ParseError, "trailing characters" if @i < @s.length
+        v
+      end
+
+      def skip_ws
+        while @i < @s.length && WS.include?(MiniJSON._byte(@s, @i))
+          @i += 1
+        end
+      end
+
+      def peek
+        return nil if @i >= @s.length
+        MiniJSON._byte(@s, @i)
+      end
+
+      def take
+        b = peek
+        @i += 1
+        b
+      end
+
+      def expect_bytes(lit)
+        if @s[@i, lit.length] == lit
+          @i += lit.length
+        else
+          raise ParseError, "expected #{lit}"
+        end
+      end
+
+      def parse_value
+        c = peek
+        case c
+        when 123 # {
+          parse_object
+        when 91 # [
+          parse_array
+        when 34 # "
+          parse_string
+        when 116 # t
+          expect_bytes("true")
+          true
+        when 102 # f
+          expect_bytes("false")
+          false
+        when 110 # n
+          expect_bytes("null")
+          nil
+        else
+          if c == 45 || (c && c >= 48 && c <= 57)
+            parse_number
+          else
+            raise ParseError, "unexpected byte #{c.inspect}"
+          end
+        end
+      end
+
+      def parse_object
+        take # {
+        skip_ws
+        obj = {}
+        if peek == 125 # }
+          take
+          return obj
+        end
+        loop do
+          skip_ws
+          k = parse_string
+          skip_ws
+          raise ParseError, "expected :" unless take == 58
+          skip_ws
+          obj[k] = parse_value
+          skip_ws
+          sep = take
+          break if sep == 125
+          raise ParseError, "expected , or }" unless sep == 44
+        end
+        obj
+      end
+
+      def parse_array
+        take # [
+        skip_ws
+        arr = []
+        if peek == 93 # ]
+          take
+          return arr
+        end
+        loop do
+          skip_ws
+          arr << parse_value
+          skip_ws
+          sep = take
+          break if sep == 93
+          raise ParseError, "expected , or ]" unless sep == 44
+        end
+        arr
+      end
+
+      def parse_string
+        raise ParseError, "expected string" unless take == 34
+        out = +""
+        while @i < @s.length
+          b = take
+          if b == 34
+            out.force_encoding(Encoding::UTF_8) if defined?(Encoding) && out.respond_to?(:force_encoding)
+            return out
+          end
+          if b == 92
+            esc = take
+            case esc
+            when 34 then out << "\""
+            when 92 then out << "\\"
+            when 47 then out << "/"
+            when 98 then out << "\b"
+            when 102 then out << "\f"
+            when 110 then out << "\n"
+            when 114 then out << "\r"
+            when 116 then out << "\t"
+            when 117
+              out << parse_unicode_escape
+            else
+              raise ParseError, "bad escape"
+            end
+          else
+            out << MiniJSON._chr(b)
+          end
+        end
+        raise ParseError, "unterminated string"
+      end
+
+      def parse_hex4
+        h = @s[@i, 4]
+        raise ParseError, "bad unicode escape" unless h && h.length == 4
+        @i += 4
+        Integer(h, 16)
+      rescue StandardError
+        raise ParseError, "bad unicode escape"
+      end
+
+      def parse_unicode_escape
+        code = parse_hex4
+        if code >= 0xD800 && code <= 0xDBFF
+          if peek == 92 && MiniJSON._byte(@s, @i + 1) == 117
+            take # \
+            take # u
+            low = parse_hex4
+            if low >= 0xDC00 && low <= 0xDFFF
+              code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)
+            end
+          end
+        end
+        [code].pack("U")
+      end
+
+      def parse_number
+        rest = @s[@i, @s.length - @i]
+        m = /\A-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+\-]?\d+)?/.match(rest)
+        raise ParseError, "bad number" unless m
+        num = m[0]
+        @i += num.length
+        if num.include?(".") || num.include?("e") || num.include?("E")
+          Float(num)
+        else
+          Integer(num)
+        end
+      rescue StandardError
+        raise ParseError, "bad number"
+      end
+    end
+
+    module Generator
+      module_function
+
+      def generate(obj)
+        case obj
+        when NilClass
+          "null"
+        when TrueClass
+          "true"
+        when FalseClass
+          "false"
+        when Numeric
+          obj.to_s
+        when String
+          quote(obj)
+        when Array
+          "[" + obj.map { |e| generate(e) }.join(",") + "]"
+        when Hash
+          "{" + obj.map { |k, v| quote(k.to_s) + ":" + generate(v) }.join(",") + "}"
+        else
+          quote(obj.to_s)
+        end
+      end
+
+      def quote(str)
+        s = str.to_s
+        out = "\""
+        if s.respond_to?(:each_char)
+          s.each_char do |ch|
+            code = ch.respond_to?(:ord) ? ch.ord : ch[0]
+            case ch
+            when "\""
+              out << "\\\""
+            when "\\"
+              out << "\\\\"
+            when "\b"
+              out << "\\b"
+            when "\f"
+              out << "\\f"
+            when "\n"
+              out << "\\n"
+            when "\r"
+              out << "\\r"
+            when "\t"
+              out << "\\t"
+            else
+              if code && code < 32
+                out << sprintf("\\u%04x", code)
+              else
+                out << ch
+              end
+            end
+          end
+        else
+          s.each_byte do |b|
+            case b
+            when 34
+              out << "\\\""
+            when 92
+              out << "\\\\"
+            when 8
+              out << "\\b"
+            when 12
+              out << "\\f"
+            when 10
+              out << "\\n"
+            when 13
+              out << "\\r"
+            when 9
+              out << "\\t"
+            else
+              if b < 32
+                out << sprintf("\\u%04x", b)
+              else
+                out << b.chr
+              end
+            end
+          end
+        end
+        out << "\""
+      end
+    end
+  end
+
+  unless defined?(JSON)
+    module JSON
+      class ParserError < StandardError; end
+
+      def self.parse(str)
+        MiniJSON.parse(str)
+      rescue MiniJSON::ParseError => e
+        raise ParserError, e.message
+      end
+
+      def self.dump(obj)
+        MiniJSON.dump(obj)
+      end
+
+      def self.pretty_generate(obj)
+        dump(obj)
+      end
+    end
+  end
+end
 
 # In-game TCP bridge for external automation.
 # - Newline-delimited JSON protocol
@@ -15,6 +331,7 @@ require "json"
 module AgentBridge
   HOST = (ENV["ANIL_AGENT_HOST"] || "127.0.0.1").freeze
   PORT = Integer(ENV["ANIL_AGENT_PORT"] || "53135")
+  STATUS_PATH = File.join(__dir__, "agent_bridge_status.json").freeze
 
   MAX_LINES_PER_FRAME = 50
   MAX_BYTES_PER_FRAME = 64 * 1024
@@ -34,6 +351,22 @@ module AgentBridge
   @uid_cache = {} # object_id => uid
 
   class << self
+    def write_status(kind, extra = {})
+      payload = {
+        "t" => now_f,
+        "kind" => kind.to_s,
+        "host" => HOST,
+        "port" => PORT,
+        "disabled" => !!@disabled
+      }
+      if extra.is_a?(Hash)
+        extra.each { |k, v| payload[k.to_s] = v }
+      end
+      File.open(STATUS_PATH, "wb") { |f| f.write(JSON.pretty_generate(payload)) }
+    rescue StandardError
+      # ignore
+    end
+
     def log(msg)
       return unless @debug
       MKXP.puts("[AgentBridge] #{msg}")
@@ -92,9 +425,11 @@ module AgentBridge
 
       @server = TCPServer.new(HOST, PORT)
       @server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true) if @server.respond_to?(:setsockopt)
+      write_status("listening", { "pid" => Process.pid }) rescue nil
       log("listening on #{HOST}:#{PORT}")
     rescue StandardError => e
       @disabled = true
+      write_status("start_failed", { "error" => "#{e.class}: #{e.message}" }) rescue nil
       log("failed to start server: #{e.class}: #{e.message}")
     end
 
@@ -574,7 +909,41 @@ begin
           __agent_bridge_original_update(*args)
         rescue StandardError
           __agent_bridge_original_update(*args)
+  end
+end
+
+begin
+  AgentBridge.write_status("loaded")
+rescue StandardError
+  # ignore
+end
+
+begin
+  AgentBridge.start
+rescue StandardError
+  # ignore
+end
+    end
+  end
+rescue StandardError
+  # ignore
+end
+
+# ---- Fallback pump thread ----
+# Some builds load `preload.rb` before `Graphics`/`SceneManager` exist, so the hook
+# above may never install. This lightweight background pump keeps the TCP bridge
+# responsive regardless of load order.
+begin
+  unless defined?($ANIL_AGENT_BRIDGE_PUMP_STARTED) && $ANIL_AGENT_BRIDGE_PUMP_STARTED
+    $ANIL_AGENT_BRIDGE_PUMP_STARTED = true
+    Thread.new do
+      loop do
+        begin
+          AgentBridge.update
+        rescue StandardError
+          # ignore
         end
+        sleep 0.05
       end
     end
   end

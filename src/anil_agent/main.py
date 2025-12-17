@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 import io
+import time
 
 from dotenv import load_dotenv
 
@@ -124,7 +125,15 @@ def main() -> int:
     cfg = load_config(args.config)
     run_paths = setup_logging(cfg.paths.logs_dir)
 
-    bridge = BridgeClient(BridgeClientConfig(host=cfg.game.ruby_host, port=cfg.game.ruby_port))
+    bridge_cfg = BridgeClientConfig(host=cfg.game.ruby_host, port=cfg.game.ruby_port)
+    if args.bridge_test:
+        bridge_cfg = BridgeClientConfig(
+            host=cfg.game.ruby_host,
+            port=cfg.game.ruby_port,
+            connect_timeout_s=3.0,
+            request_timeout_s=3.0,
+        )
+    bridge = BridgeClient(bridge_cfg)
     capture = WindowCapture(
         WindowCaptureConfig(
             window_title_contains=cfg.game.window_title_contains,
@@ -148,9 +157,27 @@ def main() -> int:
         return 0
 
     if args.bridge_test:
-        ok = bridge.ping()
-        if not ok:
-            raise RuntimeError("bridge ping failed")
+        try:
+            try:
+                input_ctrl.focus_window()
+                time.sleep(0.25)
+            except Exception as exc:
+                logger.info("bridge-test: could not focus game window: %s", exc)
+
+            ok = bridge.ping()
+            if not ok:
+                logger.error("bridge-test: ping returned not-ok")
+                return 2
+        except Exception as exc:
+            logger.error("bridge-test failed: %s", exc)
+            logger.error(
+                "Troubleshooting: start the game from the folder that contains `agent_bridge.rb`, "
+                "ensure `preload.rb` ends with `require_relative \"agent_bridge\"`, "
+                "and confirm your config uses the right host/port (currently %s:%s).",
+                cfg.game.ruby_host,
+                cfg.game.ruby_port,
+            )
+            return 2
         for _ in range(100):
             bridge.ping()
             bridge.get_state()

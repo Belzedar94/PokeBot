@@ -1,0 +1,10 @@
+discord.py<3,>=2.3
+google-genai
+mss>=9.0
+Pillow>=10.0
+pywin32>=306
+pydirectinput>=1.0
+pydantic<3,>=2.4
+PyYAML>=6.0
+python-dotenv>=1.0
+requests>=2.31

@@ -62,20 +62,35 @@ class BridgeClient:
         )
 
         with self._lock:
+            last_exc: Optional[BaseException] = None
             for attempt in range(2):
+                stage = "connect"
                 try:
+                    stage = "connect"
                     self._ensure_connected_locked()
                     assert self._file is not None
+                    stage = "write"
                     self._file.write(payload)
                     self._file.flush()
+                    stage = "read"
                     line = self._file.readline()
                     if not line:
                         raise ConnectionError("bridge closed connection")
                     return json.loads(line.decode("utf-8"))
                 except Exception as exc:
-                    logger.warning("bridge request failed (attempt %s): %s", attempt + 1, exc)
+                    last_exc = exc
+                    logger.warning(
+                        "bridge request failed (attempt %s, stage=%s, host=%s, port=%s): %s",
+                        attempt + 1,
+                        stage,
+                        self._cfg.host,
+                        self._cfg.port,
+                        exc,
+                    )
                     self._close_locked()
-            raise ConnectionError("bridge request failed after retries")
+            raise ConnectionError(
+                f"bridge request failed after retries (host={self._cfg.host}, port={self._cfg.port})"
+            ) from last_exc
 
     def ping(self) -> bool:
         resp = self.request({"cmd": "ping"})
@@ -105,4 +120,3 @@ class BridgeClient:
 
     def set_debug(self, enabled: bool) -> None:
         self.request({"cmd": "set", "key": "debug", "value": bool(enabled)})
-

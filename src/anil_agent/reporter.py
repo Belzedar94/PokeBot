@@ -26,8 +26,8 @@ def summary_json_schema() -> dict:
 
 @dataclass(frozen=True)
 class ReporterConfig:
-    mode: str = "template"  # "template" or "gemini"
-    model: str = "gemini-3-flash-preview"
+    mode: str = "gemini"  # "template" or "gemini"
+    model: str = "gemini-3-pro-preview"
     thinking_level: str = "high"
     api_key_env: str = "GEMINI_API_KEY"
     timeout_s: float = 20.0

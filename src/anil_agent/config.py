@@ -15,11 +15,11 @@ class GameConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    model: str = "gemini-3-flash-preview"
+    model: str = "gemini-3-pro-preview"
     thinking_level: Literal["low", "high"] = "high"
     step_delay_ms: int = Field(default=250, ge=0, le=60_000)
     max_actions_per_minute: int = Field(default=240, ge=1, le=10_000)
-    summary_mode: Literal["template", "gemini"] = "template"
+    summary_mode: Literal["template", "gemini"] = "gemini"
     rules_text_spanish: Optional[str] = None
 
 
