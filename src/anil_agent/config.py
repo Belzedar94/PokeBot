@@ -12,6 +12,8 @@ class GameConfig(BaseModel):
     ruby_host: str = "127.0.0.1"
     ruby_port: int = Field(default=53135, ge=1, le=65535)
     screenshot_max_width: Optional[int] = Field(default=768, ge=64)
+    screenshot_mode: Literal["window", "window_on_screen", "screen"] = "window"
+    screenshot_monitor_index: int = Field(default=1, ge=0)
 
 
 class AgentConfig(BaseModel):

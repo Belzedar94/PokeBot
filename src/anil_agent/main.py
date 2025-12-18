@@ -138,6 +138,8 @@ def main() -> int:
         WindowCaptureConfig(
             window_title_contains=cfg.game.window_title_contains,
             screenshot_max_width=cfg.game.screenshot_max_width,
+            screenshot_mode=cfg.game.screenshot_mode,
+            screenshot_monitor_index=cfg.game.screenshot_monitor_index,
         )
     )
     input_ctrl = InputController(InputControllerConfig(window_title_contains=cfg.game.window_title_contains))
@@ -186,16 +188,21 @@ def main() -> int:
         return 0
 
     if args.gemini_test:
-        from PIL import Image
+        try:
+            screenshot_png, _ = capture.capture()
+        except Exception as exc:
+            logger.warning("gemini-test: capture failed (%s), using black image", exc)
+            from PIL import Image
 
-        img = Image.new("RGB", (320, 240), color=(0, 0, 0))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
+            img = Image.new("RGB", (320, 240), color=(0, 0, 0))
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            screenshot_png = buf.getvalue()
         gemini = GeminiClient(
             GeminiConfig(model=cfg.agent.model, thinking_level=cfg.agent.thinking_level)
         )
         action = gemini.decide_action(
-            screenshot_png=buf.getvalue(),
+            screenshot_png=screenshot_png,
             state={"t": 0, "scene": "preflight"},
             recent_actions=[],
             rules_text_spanish=cfg.agent.rules_text_spanish,

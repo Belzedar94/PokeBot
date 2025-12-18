@@ -49,18 +49,23 @@ If you use the game copy inside this repo (`ROM/`), it’s already set up:
 
 - `ROM/agent_bridge.rb` exists
 - `ROM/preload.rb` ends with `require_relative "agent_bridge"`
+- `ROM/mkxp.json` includes `"preloadScript": ["preload.rb"],` (this makes the game run `preload.rb` automatically)
 
 If you are using a different copy of the game, do this once:
 
 1. Find your game folder (the folder that contains `Game.exe`).
 2. Copy `anil-agent/game_mod/agent_bridge.rb` into that game folder (next to `Game.exe`).
-3. Edit the file `preload.rb` in that game folder:
+3. Ensure the game runs `preload.rb` (mkxp-z setting):
+   - In the same folder, open `mkxp.json` with Notepad
+   - Add this line (anywhere near the other settings, for example under `bindingNames`):
+     - `"preloadScript": ["preload.rb"],`
+4. Edit the file `preload.rb` in that game folder:
    - Right-click `preload.rb` → “Open with” → Notepad
    - Scroll to the bottom
    - Add this on a new line:
      - `require_relative "agent_bridge"`
    - Save the file
-4. Close and re-open the game.
+5. Close and re-open the game.
 
 If Windows shows a Firewall popup for the game, allow it (the bridge only listens on your own PC at `127.0.0.1`).
 
@@ -245,6 +250,9 @@ Expected output:
 
 - You should see a line like `bridge test OK` and the program exits.
 - It also prints a `run_id=...` line and saves a log file under `logs/<run_id>/run.log`.
+- If it fails with a timeout, click the game window once (some games pause when not focused) and run the test again.
+- If it fails with "connection refused", look in your game folder (the one with `Game.exe`) for `agent_bridge_status.json` or `agent_bridge_status.txt` to see whether the bridge loaded and whether it could start listening.
+- If `agent_bridge_status.*` is missing, check `preload_status.txt` in the game folder to confirm `preload.rb` is being executed.
 
 ```powershell
 # Bridge: runs 100x ping/state/events (game must be running + bridge installed)

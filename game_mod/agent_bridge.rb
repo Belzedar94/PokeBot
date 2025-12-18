@@ -240,7 +240,7 @@ rescue LoadError
 
       def quote(str)
         s = str.to_s
-        out = "\""
+        out = +"\""
         if s.respond_to?(:each_char)
           s.each_char do |ch|
             code = ch.respond_to?(:ord) ? ch.ord : ch[0]
@@ -362,9 +362,41 @@ module AgentBridge
       if extra.is_a?(Hash)
         extra.each { |k, v| payload[k.to_s] = v }
       end
-      File.open(STATUS_PATH, "wb") { |f| f.write(JSON.pretty_generate(payload)) }
-    rescue StandardError
-      # ignore
+      File.open(STATUS_PATH, "wb") { |f| f.write(json_pretty(payload)) }
+    rescue StandardError => e
+      begin
+        File.open(File.join(__dir__, "agent_bridge_status.txt"), "ab") do |f|
+          f.write("write_status failed: #{e.class}: #{e.message}\n")
+        end
+      rescue StandardError
+        # ignore
+      end
+    end
+
+    def json_parse(str)
+      if defined?(::JSON) && ::JSON.respond_to?(:parse)
+        ::JSON.parse(str)
+      else
+        MiniJSON.parse(str)
+      end
+    end
+
+    def json_dump(obj)
+      if defined?(::JSON) && ::JSON.respond_to?(:dump)
+        ::JSON.dump(obj)
+      elsif defined?(::JSON) && ::JSON.respond_to?(:generate)
+        ::JSON.generate(obj)
+      else
+        MiniJSON.dump(obj)
+      end
+    end
+
+    def json_pretty(obj)
+      if defined?(::JSON) && ::JSON.respond_to?(:pretty_generate)
+        ::JSON.pretty_generate(obj)
+      else
+        json_dump(obj)
+      end
     end
 
     def log(msg)
@@ -528,12 +560,12 @@ module AgentBridge
         next if line.empty?
 
         resp = handle_command(line)
-        st[:out] << JSON.dump(resp) << "\n"
+        st[:out] << json_dump(resp) << "\n"
         lines_budget -= 1
       end
       lines_budget
     rescue StandardError => e
-      st[:out] << JSON.dump({ ok: false, error: "#{e.class}: #{e.message}" }) << "\n"
+      st[:out] << json_dump({ ok: false, error: "#{e.class}: #{e.message}" }) << "\n"
       lines_budget - 1
     end
 
@@ -549,7 +581,11 @@ module AgentBridge
     end
 
     def handle_command(line)
-      obj = JSON.parse(line)
+      begin
+        obj = json_parse(line)
+      rescue StandardError
+        return { ok: false, error: "invalid json" }
+      end
       cmd = obj["cmd"]
 
       case cmd
@@ -571,8 +607,6 @@ module AgentBridge
       else
         { ok: false, error: "unknown cmd" }
       end
-    rescue JSON::ParserError
-      { ok: false, error: "invalid json" }
     rescue StandardError => e
       { ok: false, error: "#{e.class}: #{e.message}" }
     end

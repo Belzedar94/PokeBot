@@ -4,6 +4,12 @@ game:
   ruby_host: "127.0.0.1"
   ruby_port: 53135
   screenshot_max_width: 768
+  # "window" = capture the game window offscreen (no focus needed)
+  # "window_on_screen" = crop the window from the visible screen (must be visible)
+  # "screen" = capture full monitor
+  screenshot_mode: "window"
+  # 0 = all monitors, 1 = primary, 2 = second monitor, etc.
+  screenshot_monitor_index: 1
 
 agent:
   model: "gemini-3-flash-preview"
