@@ -249,6 +249,11 @@ class AgentController:
                     self._status.last_action = action_to_dict(action)
                     self._status.last_action_t = utc_now_iso()
 
+                try:
+                    self._write_live_status(step=step, state=state, events=events, action=action)
+                except Exception as exc:
+                    logger.debug("live status write failed: %s", exc)
+
                 self._recent_actions.append(self._status.last_action or {})
                 step += 1
                 self._step_counter = step
@@ -261,3 +266,26 @@ class AgentController:
             with self._status_lock:
                 self._status.running = False
                 self._status.paused = True
+
+    def _write_live_status(
+        self,
+        *,
+        step: int,
+        state: Dict[str, Any],
+        events: List[Dict[str, Any]],
+        action: Action,
+    ) -> None:
+        with self._status_lock:
+            last_error = self._status.last_error
+        payload = {
+            "t": utc_now_iso(),
+            "step": step,
+            "state": state,
+            "events": events,
+            "action": action_to_dict(action),
+            "last_error": last_error,
+        }
+        run_dir = self._run_paths.run_dir
+        logs_dir = run_dir.parent
+        for path in (run_dir / "live.json", logs_dir / "live.json"):
+            write_json(path, payload)
